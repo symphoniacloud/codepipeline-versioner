@@ -1,0 +1,139 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Example Pipeline for CodePipeline Versioner
+  
+Resources:
+  PipelineBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - ExpirationInDays: 3
+            Status: Enabled
+
+  Versioner:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location:
+        ApplicationId: arn:aws:serverlessrepo:us-east-1:397589511426:applications/codepipeline-versioner
+        SemanticVersion: 1.0.0
+      Parameters:
+        # This is optional, setting here as example. Other optional parameters are available too
+        VersionPrefix: 0.0.
+
+  CodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      ArtifactStore:
+        Type: S3
+        Location: !Ref PipelineBucket
+      RestartExecutionOnUpdate: true
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      Stages:
+      - Name: Source
+        Actions:
+        # No particular type of Source action is required - we're just providing one here as a placeholder
+        - Name: Source
+          InputArtifacts: []
+          ActionTypeId:
+            Category: Source
+            Owner: ThirdParty
+            Version: 1
+            Provider: GitHub
+          OutputArtifacts:
+          - Name: SourceCode
+          Configuration:
+            Owner: YOUR_GITHUB_OWNER
+            Repo: YOUR_GITHUB_REPO
+            Branch: master
+            PollForSourceChanges: true
+            OAuthToken: '{{resolve:secretsmanager:github-token}}'
+
+      - Name: PerformPipelineActions
+        Actions:
+        # Make sure to run the Versioner's Lambda function before any actions that need its value
+        # In this example the action that uses the build number / version is in the same stage, but it could be a later stage too
+        - Name: IncrementVersion
+          # This "Namespace" is how we can reference variables set in the Lambda function
+          Namespace: Versioner
+          ActionTypeId:
+            Category: Invoke
+            Owner: AWS
+            Version: 1
+            Provider: Lambda
+          Configuration:
+            # "Versioner" here must be the same name as the SAR application resource above
+            FunctionName: !GetAtt Versioner.Outputs.LambdaFunction
+          RunOrder: 1
+        # Various action types can use variables, but CodeBuild is a likely candidate
+        - Name: CodeBuildSample
+          ActionTypeId:
+            Category: Build
+            Owner: AWS
+            Version: 1
+            Provider: CodeBuild
+          InputArtifacts:
+            - Name: SourceCode
+          Configuration:
+            ProjectName: !Ref CodeBuildSample
+            # Here we capture both the 'buildNumber' and 'version' values produced by the Versioner (in the "Versioner" namespace configured earlier)
+            # Typically you'd probably only want to use one of these
+            EnvironmentVariables: '[{"name":"BUILD_NUMBER","value":"#{Versioner.buildNumber}"},{"name":"VERSION","value":"#{Versioner.version}"}]'
+          RunOrder: 2
+
+  CodeBuildSample:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:3.0
+        Type: LINUX_CONTAINER
+      ServiceRole: !Ref CodeBuildRole
+      Source:
+        Type: CODEPIPELINE
+        # A simple build spec to echo the environment variables we set above in the action definition
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                nodejs: 10
+            build:
+              commands:
+                - echo "Build number is ${BUILD_NUMBER}"
+                - echo "Version is ${VERSION}"
+
+  # This needs at least permission to call the Lambda function in the SAR app
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          Effect: Allow
+          Principal:
+            Service: codepipeline.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess #TODO: Reduce permissions
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          Effect: Allow
+          Principal:
+            Service: codebuild.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess #TODO: Reduce permissions        

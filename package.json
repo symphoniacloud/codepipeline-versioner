@@ -1,0 +1,7 @@
+{
+    "name": "codepipeline-versioner",
+    "version": "1.0.0",
+    "dependencies": {
+        "aws-sdk": "^2.608.0"
+    }
+}

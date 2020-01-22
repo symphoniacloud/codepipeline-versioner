@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Manage a linearly increasing version / build number for Code Pipeline
+
+Metadata:
+  AWS::ServerlessRepo::Application:
+    Name: codepipeline-versioner
+    Description: Manage a linearly increasing version / build number for Code Pipeline
+    Author: Symphonia
+    SpdxLicenseId: Apache-2.0
+    LicenseUrl: LICENSE
+    ReadmeUrl: README.md
+    Labels: ['codepipeline', 'cd', 'devops', 'versioning']
+    HomePageUrl: https://github.com/symphoniacloud/codepipeline-versioner
+    SourceCodeUrl: https://github.com/symphoniacloud/codepipeline-versioner
+
+Parameters:
+  VersionPrefix:
+    Type: String
+    Default: "1.0."
+    Description: "A prefix that will be placed before the build number in the output 'version' value"
+
+  StartBuildNumber:
+    Type: Number
+    Default: 0
+    Description: "A number to use as the build number if a persisted value is not found in S3"
+
+  BuildNumberKey:
+    Type: String
+    Default: "buildNumber.txt"
+    Description: "The key to use when persisting the build number to S3"
+
+Outputs:
+  LambdaFunction:
+    Description: Resource Name of Build Number Provider Function
+    Value: !Ref BuildNumberProvider
+
+Resources:
+  Bucket:
+    Type: AWS::S3::Bucket
+
+  BuildNumberProvider:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: nodejs10.x
+      Handler: src/buildNumberProvider.handler
+      MemorySize: 128
+      Timeout: 3
+      Environment:
+        Variables:
+          START_BUILD_NUMBER: !Ref StartBuildNumber
+          BUCKET_NAME: !Ref Bucket
+          BUILD_NUMBER_KEY: !Ref BuildNumberKey
+          VERSION_PREFIX: !Ref VersionPrefix
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - codepipeline:PutJobSuccessResult
+                - codepipeline:PutJobFailureResult
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+                - s3:ListBucket
+              Resource:
+                - !Sub 'arn:aws:s3:::${Bucket}'
+                - !Sub 'arn:aws:s3:::${Bucket}/*'              
