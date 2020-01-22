@@ -21,7 +21,7 @@ Resources:
     Type: AWS::Serverless::Application
     Properties:
       Location:
-        ApplicationId: arn:aws:serverlessrepo:us-east-1:397589511426:applications/codepipeline-versioner
+        ApplicationId: arn:aws:serverlessrepo:us-east-1:073101298092:applications/codepipeline-versioner
         SemanticVersion: 1.0.0
       Parameters:
         # This is optional, setting here as example. Other optional parameters are available too

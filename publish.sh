@@ -12,5 +12,5 @@ sam package \
 
 sam publish \
     --region us-east-1 \
-    --semantic-version 0.0.1 \
+    --semantic-version 1.0.0 \
     --template packaged.yaml
