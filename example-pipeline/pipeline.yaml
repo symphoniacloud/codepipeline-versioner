@@ -53,7 +53,7 @@ Resources:
             Repo: YOUR_GITHUB_REPO
             Branch: master
             PollForSourceChanges: true
-            OAuthToken: '{{resolve:secretsmanager:github-token}}'
+            OAuthToken: YOUR_OAUTH_TOKEN
 
       - Name: PerformPipelineActions
         Actions:
