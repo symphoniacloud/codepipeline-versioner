@@ -151,22 +151,22 @@ Resources:
           Principal:
             Service: codestar-notifications.amazonaws.com
   
-  # NotificationRule:
-  #   Type: AWS::CodeStarNotifications::NotificationRule
-  #   Properties:
-  #     Name: !Ref CodePipeline
-  #     DetailType: FULL
-  #     Resource: !Sub "arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${CodePipeline}"
-  #     EventTypeIds:
-  #       - codepipeline-pipeline-pipeline-execution-failed
-  #       - codepipeline-pipeline-pipeline-execution-canceled
-  #       - codepipeline-pipeline-pipeline-execution-started
-  #       - codepipeline-pipeline-pipeline-execution-resumed
-  #       - codepipeline-pipeline-pipeline-execution-succeeded
-  #       - codepipeline-pipeline-pipeline-execution-superseded
-  #     Targets:
-  #       - TargetType: SNS
-  #         TargetAddress: !Ref PipelineNotificationsTopic
+  NotificationRule:
+    Type: AWS::CodeStarNotifications::NotificationRule
+    Properties:
+      Name: !Ref CodePipeline
+      DetailType: FULL
+      Resource: !Sub "arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${CodePipeline}"
+      EventTypeIds:
+        - codepipeline-pipeline-pipeline-execution-failed
+        - codepipeline-pipeline-pipeline-execution-canceled
+        - codepipeline-pipeline-pipeline-execution-started
+        - codepipeline-pipeline-pipeline-execution-resumed
+        - codepipeline-pipeline-pipeline-execution-succeeded
+        - codepipeline-pipeline-pipeline-execution-superseded
+      Targets:
+        - TargetType: SNS
+          TargetAddress: !Ref PipelineNotificationsTopic
 
   # This needs at least permission to call the Lambda function in the SAR app
   CodePipelineRole:

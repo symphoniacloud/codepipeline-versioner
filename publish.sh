@@ -19,9 +19,7 @@ sam package \
     --output-template-file packaged.yaml \
     --s3-bucket $1
 
-echo "WOULD PUBLISH $2 HERE"
-
-# sam publish \
-#     --region us-east-1 \
-#     --semantic-version $2 \
-#     --template packaged.yaml
+sam publish \
+    --region us-east-1 \
+    --semantic-version $2 \
+    --template packaged.yaml
