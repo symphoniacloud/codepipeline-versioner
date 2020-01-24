@@ -1,0 +1,196 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Example Pipeline for CodePipeline Versioner
+  
+Resources:
+  PipelineBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - ExpirationInDays: 3
+            Status: Enabled
+
+  PipelineBucketPolicy: 
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: !Ref PipelineBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: serverlessrepo.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub 'arn:aws:s3:::${PipelineBucket}/*'
+
+  Versioner:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location:
+        # Snake eats its tail...
+        ApplicationId: arn:aws:serverlessrepo:us-east-1:073101298092:applications/codepipeline-versioner
+        SemanticVersion: 1.0.0
+      Parameters:
+        VersionPrefix: 1.0.
+        StartBuildNumber: 0
+
+  CodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: codepipeline-versioner
+      ArtifactStore:
+        Type: S3
+        Location: !Ref PipelineBucket
+      RestartExecutionOnUpdate: true
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      Stages:
+      - Name: Source
+        Actions:
+        - Name: Source
+          InputArtifacts: []
+          ActionTypeId:
+            Category: Source
+            Owner: ThirdParty
+            Version: 1
+            Provider: GitHub
+          OutputArtifacts:
+          - Name: SourceCode
+          Configuration:
+            Owner: symphoniacloud
+            Repo: codepipeline-versioner
+            Branch: master
+            PollForSourceChanges: false
+            OAuthToken: '{{resolve:secretsmanager:github-token}}'
+
+      - Name: PerformPipelineActions
+        Actions:
+        - Name: IncrementVersion
+          Namespace: Versioner
+          ActionTypeId:
+            Category: Invoke
+            Owner: AWS
+            Version: 1
+            Provider: Lambda
+          Configuration:
+            FunctionName: !GetAtt Versioner.Outputs.LambdaFunction
+          RunOrder: 1
+        - Name: BuildAndPublish
+          ActionTypeId:
+            Category: Build
+            Owner: AWS
+            Version: 1
+            Provider: CodeBuild
+          InputArtifacts:
+            - Name: SourceCode
+          Configuration:
+            ProjectName: !Ref BuildAndPublish
+            EnvironmentVariables: !Sub '[{"name":"SAM_BUCKET","value":"${PipelineBucket}"},{"name":"VERSION","value":"#{Versioner.version}"}]'
+          RunOrder: 2
+
+  GithubWebhook:
+    Type: 'AWS::CodePipeline::Webhook'
+    Properties:
+      Authentication: GITHUB_HMAC
+      AuthenticationConfiguration:
+        SecretToken: '{{resolve:secretsmanager:github-token}}'
+      RegisterWithThirdParty: 'true'
+      Filters:
+      - JsonPath: "$.ref"
+        MatchEquals: !Sub 'refs/heads/master'
+      TargetPipeline: !Ref CodePipeline
+      TargetAction: Source
+      TargetPipelineVersion: !GetAtt CodePipeline.Version
+
+  BuildAndPublish:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:3.0
+        Type: LINUX_CONTAINER
+      ServiceRole: !Ref CodeBuildRole
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                nodejs: 10
+              commands:
+                - pip install --user aws-sam-cli
+                - USER_BASE_PATH=$(python -m site --user-base)
+                - export PATH=$PATH:$USER_BASE_PATH/bin
+            build:
+              commands:
+                - echo "SAM_BUCKET is $SAM_BUCKET"
+                - echo "VERSION is $VERSION"
+                - ./publish.sh $SAM_BUCKET $VERSION
+
+  PipelineNotificationsTopic:
+    Type: AWS::SNS::Topic
+  
+  PipelineNotificationsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref PipelineNotificationsTopic
+      PolicyDocument: 
+        Statement:
+        - Action: 'SNS:Publish'
+          Effect: Allow
+          Resource: !Ref PipelineNotificationsTopic
+          Principal:
+            Service: codestar-notifications.amazonaws.com
+  
+  # NotificationRule:
+  #   Type: AWS::CodeStarNotifications::NotificationRule
+  #   Properties:
+  #     Name: !Ref CodePipeline
+  #     DetailType: FULL
+  #     Resource: !Sub "arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${CodePipeline}"
+  #     EventTypeIds:
+  #       - codepipeline-pipeline-pipeline-execution-failed
+  #       - codepipeline-pipeline-pipeline-execution-canceled
+  #       - codepipeline-pipeline-pipeline-execution-started
+  #       - codepipeline-pipeline-pipeline-execution-resumed
+  #       - codepipeline-pipeline-pipeline-execution-succeeded
+  #       - codepipeline-pipeline-pipeline-execution-superseded
+  #     Targets:
+  #       - TargetType: SNS
+  #         TargetAddress: !Ref PipelineNotificationsTopic
+
+  # This needs at least permission to call the Lambda function in the SAR app
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          Effect: Allow
+          Principal:
+            Service: codepipeline.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess #TODO: Reduce permissions
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          Effect: Allow
+          Principal:
+            Service: codebuild.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess #TODO: Reduce permissions        
