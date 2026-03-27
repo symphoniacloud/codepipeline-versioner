@@ -1,5 +1,7 @@
 # CodePipeline Versioner
 
+**THIS REPOSITORY IS ARCHIVED AND UNMAINTANED. IT MAY NO LONGER WORK WITH RELEVANT DEPENDENCIES AND SERVICES. IT MAY SPECIFY INSECURE LIBRARY DEPENDENCIES.**
+
 This is an AWS SAR component that provides build and version numbering for AWS CodePipeline.
 
 ## Introduction
